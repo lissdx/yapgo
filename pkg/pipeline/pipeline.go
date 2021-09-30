@@ -1,9 +1,14 @@
 package pipeline
 
+import "sync"
+
+type ReadOnlyStream <-chan interface{}
+type WriteOnlyStream chan<- interface{}
+type BidirectionalStream chan interface{}
+
 // StageFn is a lower level function type that chains together multiple
 // stages using channels.
-type StageFn func(done <-chan interface{}, inChan <-chan interface{}, err chan <- interface{}) (outChan chan interface{})
-
+type StageFn func(doneCh, inStream ReadOnlyStream) ReadOnlyStream
 
 // Pipeline type defines a pipeline to which processing "stages" can
 // be added and configured to fan-out. Pipelines are meant to be long
@@ -16,7 +21,7 @@ type Pipeline []StageFn
 
 // ProcessFn are the primary function types defined by users of this
 // package and passed in to instantiate a meaningful pipeline.
-type ProcessFn func(inObj interface{}) (outObj interface{}, err error)
+type ProcessFn func(inObj interface{}) (outObj interface{})
 
 // New is a convenience method that creates a new Pipeline
 func New() Pipeline {
@@ -29,129 +34,121 @@ func (p *Pipeline) AddStage(inFunc ProcessFn) {
 	*p = append(*p, stageFnFactory(inFunc))
 }
 
-// stageFnFactory makes a standard stage function from a given ProcessFn.
-// StageFn functions types accept an inChan and return an outChan, allowing
-// us to chain multiple functions into a pipeline.
-func stageFnFactory(inFunc ProcessFn) (outFunc StageFn) {
-	return func(done <-chan interface{}, inChan <-chan interface{}, errStream chan <- interface{}) (outChan chan interface{}) {
-		outChan = make(chan interface{})
-		go func() {
-			defer close(outChan)
-			for inObj := range OrDone(done, inChan) {
-				//for inObj := range inChan{
-				outObj, err := inFunc(inObj)
-				if err != nil {
-					errStream <- err
-					continue
-				}
+// AddStageWithFanOut adds a parallel fan-out ProcessFn to the pipeline. The
+// fanSize number indicates how many instances of this stage will read from the
+// previous stage and process the data flowing through simultaneously to take
+// advantage of parallel CPU scheduling.
+//
+// Most pipelines will have multiple stages, and the order in which AddStage()
+// and AddStageWithFanOut() is invoked matters -- the first invocation indicates
+// the first stage and so forth.
+//
+// Since discrete goroutines process the inChan for FanOut > 1, the order of
+// objects flowing through the FanOut stages can't be guaranteed.
+func (p *Pipeline) AddStageWithFanOut(inFunc ProcessFn, fanSize uint64) {
+	*p = append(*p, fanningStageFnFactory(inFunc, fanSize))
+}
 
-				select {
-				case <-done:
-					return
-				case outChan <- outObj:
-				//case outChan <- inFunc(inObj):
-					//default:
-					//	if outObj := inFunc(inObj); outObj != nil {
-					//		outChan <- outObj
-					//	}
-				}
-			}
-		}()
+// fanningStageFnFactory makes a stage function that fans into multiple
+// goroutines increasing the stage throughput depending on the CPU.
+func fanningStageFnFactory(inFunc ProcessFn, fanSize uint64) (outFunc StageFn) {
+	return func(done ReadOnlyStream, inChan ReadOnlyStream) (outChan ReadOnlyStream) {
+		var channels []ReadOnlyStream
+		for i := uint64(0); i < fanSize; i++ {
+			//channels = append(channels, stageFnFactory(inFunc)(inChan))
+			channels = append(channels, stageFnFactory(inFunc)(done, inChan))
+		}
+		outChan = MergeChannels(done, channels)
 		return
 	}
 }
 
-// Run starts the pipeline with all the stages that have been added. Run is not
+// MergeChannels merges an array of channels into a single channel. This utility
+// function can also be used independently outside of a pipeline.
+func MergeChannels(doneCh ReadOnlyStream, inChans []ReadOnlyStream) ReadOnlyStream {
+	var wg sync.WaitGroup
+	wg.Add(len(inChans))
+
+	outChan := make(chan interface{})
+	for _, inChan := range inChans {
+		go func(ch <-chan interface{}) {
+			defer wg.Done()
+			for obj := range OrDone(doneCh, ch) {
+				select {
+				case <-doneCh:
+					return
+				case outChan <- obj:
+				}
+
+			}
+		}(inChan)
+	}
+
+	go func() {
+		defer close(outChan)
+		wg.Wait()
+	}()
+	return outChan
+}
+
+// stageFnFactory makes a standard stage function from a given ProcessFn.
+// StageFn functions types accept an inChan and return an outChan, allowing
+// us to chain multiple functions into a pipeline.
+func stageFnFactory(inFunc ProcessFn) (outFunc StageFn) {
+	return func(doneCh, inChan ReadOnlyStream) ReadOnlyStream {
+		outChan := make(chan interface{})
+		go func() {
+			defer close(outChan)
+			for inObj := range OrDone(doneCh, inChan) {
+				outObj := inFunc(inObj)
+				select {
+				case <-doneCh:
+					return
+				case outChan <- outObj:
+				}
+			}
+		}()
+		return outChan
+	}
+}
+
+// Run starts the pipeline with all the stages that have been added. and returns
+// the result channel with 'pipelined' data
+// We be able to use the channel to connect another pipeline or use the pipelined data
+func (p *Pipeline) Run(doneCh, inStream ReadOnlyStream) (outChan ReadOnlyStream) {
+
+	for _, stage := range *p {
+		inStream = stage(doneCh, inStream)
+	}
+
+	outChan = inStream
+	return
+}
+
+// RunPlug starts the pipeline with all the stages that have been added. RunPlug is not
 // a blocking function and will return immediately with a doneChan. Consumers
 // can wait on the doneChan for an indication of when the pipeline has completed
 // processing.
 //
-// The pipeline runs until its `inChan` channel is open. Once the `inChan` is closed,
+// The pipeline runs until its `inStream` channel is open. Once the `inStream` is closed,
 // the pipeline stages will sequentially complete from the first stage to the last.
 // Once all stages are complete, the last outChan is drained and the doneChan is closed.
 //
-// Run() can be invoked multiple times to start multiple instances of a pipeline
+// RunPlug() can be invoked multiple times to start multiple instances of a pipeline
 // that will typically process different incoming channels.
-func (p *Pipeline) Run(done <-chan interface{}, inChan <-chan interface{}, err  chan <- interface{}) <- chan interface{} {
-	//func (p *Pipeline) Run(done <-chan interface{}, inChan <-chan interface{}) (doneChan chan struct{}) {
+func (p *Pipeline) RunPlug(doneCh, inStream ReadOnlyStream) ReadOnlyStream {
+
 	for _, stage := range *p {
-		inChan = stage(done, inChan, err)
+		inStream = stage(doneCh, inStream)
 	}
 
-	//doneChan = make(chan struct{})
-	//go func() {
-	//	defer close(doneChan)
-	//	for range inChan {
-	//		// pull objects from inChan so that the gc marks them
-	//	}
-	//}()
-	return inChan
-}
-
-func (p *Pipeline) RunPlug(done <-chan interface{}, inChan <-chan interface{}, err  chan <- interface{}) (doneChan chan interface{}) {
-	for _, stage := range *p {
-		inChan = stage(done, inChan, err)
-	}
-
-	doneChan = make(chan interface{})
+	doneChan := make(chan interface{})
 	go func() {
 		defer close(doneChan)
-		for range inChan {
+		for range OrDone(doneCh, inStream) {
 			// pull objects from inChan so that the gc marks them
 		}
 	}()
 
-	return
-}
-
-// OrDone
-// wrap our read from the channel with a select statement that
-// also selects from a done channel.
-// for val := range orDone(done, myChan) {
-//   ...Do something with val
-// }
-func OrDone(done, c <-chan interface{}) <-chan interface{} {
-	valStream := make(chan interface{})
-	go func() {
-		defer close(valStream)
-		for {
-			select {
-			case <-done:
-				return
-			case v, ok := <-c:
-				if ok == false {
-					return
-				}
-				select {
-				case valStream <- v:
-				case <-done:
-					return // I've added return here
-				}
-			}
-		}
-	}()
-	return valStream
-}
-
-func Tee(done <-chan interface{}, in <-chan interface{}) (chan interface{}, chan interface{}) {
-
-	out1 := make(chan interface{})
-	out2 := make(chan interface{})
-	go func() {
-		defer close(out1)
-		defer close(out2)
-		for val := range OrDone(done, in) {
-			var hOut1, hOut2 = out1, out2
-			for i := 0; i < 2; i++ {
-				select {
-				case <-done:
-				case hOut1 <- val:
-					hOut1 = nil
-				case hOut2 <- val:
-					hOut2 = nil
-				}
-			}
-		}
-	}()
-	return out1, out2
+	return doneChan
 }
