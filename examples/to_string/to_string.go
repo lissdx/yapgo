@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"yapgo/pkg/pipeline"
+	"github.com/lissdx/yapgo/pkg/pipeline"
 )
 
 // ToString small example that introduces a toString pipeline stage:

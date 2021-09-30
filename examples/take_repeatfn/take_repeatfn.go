@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"github.com/lissdx/yapgo/pkg/pipeline"
 	"math/rand"
-	"yapgo/pkg/pipeline"
 )
 
 func main() {
