@@ -45,7 +45,7 @@ func (NaivePrimerFinder) endStubFn() pipeline.ProcessFn {
 func main() {
 	rand := func() interface{} { return rand.Intn(50000000) }
 	primerFinder := NaivePrimerFinder{}
-	pLine := pipeline.Pipeline{}
+	pLine := pipeline.New()
 	done := make(chan interface{})
 	defer close(done)
 

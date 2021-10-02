@@ -56,9 +56,6 @@ func TestTake(t *testing.T) {
 		{name: "takeOne", takeTimes: 1, args: []interface{}{1, 2, 3}, want: []interface{}{1}},
 		{name: "takeTwo", takeTimes: 2, args: []interface{}{1, 2, 3}, want: []interface{}{1, 2}},
 		{name: "take5FromShortSrc", takeTimes: 5, args: []interface{}{1, 2, 3}, want: []interface{}{1, 2, 3}},
-		//{name: "oneInt", args: []interface{}{1}, want: []interface{}{1}},
-		//{name: "twoInt", args: []interface{}{1,-1}, want: []interface{}{1,-1}},
-		//{name: "tenInt", args: []interface{}{1,-1, 23, 100, 26, 33, 78, 33, 221, 0}, want: []interface{}{1,-1, 23, 100, 26, 33, 78, 33, 221, 0}},
 	}
 
 	for _, tt := range tests {
