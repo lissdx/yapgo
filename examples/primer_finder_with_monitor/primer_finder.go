@@ -25,22 +25,26 @@ func (NaivePrimerFinder) isPrime(integer int) bool {
 	return isPrime
 }
 
+func (n NaivePrimerFinder) ErrorHandler(err error)  {
+	fmt.Printf("pipeline error: %s \n", err.Error())
+}
+
 func (n NaivePrimerFinder) NaivePrimer() pipeline.ProcessFn {
-	return func(inObj interface{}) interface{} {
+	return func(inObj interface{}) (interface{}, error) {
 		intVal, ok := inObj.(int)
 		if !ok {
-			return Primer{integer: intVal, IsPrimer: false}
+			return nil, fmt.Errorf("can't assert inObj: %v", Primer{integer: intVal, IsPrimer: false})
 		}
-		return Primer{integer: intVal, IsPrimer: n.isPrime(intVal)}
+		return Primer{integer: intVal, IsPrimer: n.isPrime(intVal)}, nil
 	}
 }
 
 func (NaivePrimerFinder) endStubFn(monitoringStream pipeline.WriteOnlyStream) pipeline.ProcessFn {
-	return func(inObj interface{}) interface{} {
+	return func(inObj interface{}) (interface{}, error)  {
 		monitorMsg := fmt.Sprintf("endStubFn monitor : %v", time.Now().String())
 		fmt.Printf("NaivePrimerFinder is pimer: %v\n", inObj)
 		monitoringStream <- monitorMsg
-		return inObj
+		return inObj, nil
 	}
 }
 
@@ -62,14 +66,17 @@ func main() {
 	monitorStream := make(chan interface{}) // Create channel for monitoring data
 	// Add Stage to monitoring pipeline
 	// with slow monitoring function
-	monitoringPipeLine.AddStageWithFanOut(func(inObj interface{}) (outObj interface{}) {
+	monitoringPipeLine.AddStageWithFanOut(func(inObj interface{}) (outObj interface{}, err error) {
 		monitorMsg, ok := inObj.(string)
 		time.Sleep(time.Second * 3)
 		if ok {
 			fmt.Printf("Monitoring Fun msg: %s\n", monitorMsg)
+		} else {
+			fmt.Printf("Monitoring Fun msg: %s\n", "error on assert")
+			return nil, fmt.Errorf("can't assert inObj to string: %v", inObj)
 		}
-		return inObj
-	}, 100)
+		return inObj, nil
+	}, primerFinder.ErrorHandler,100)
 
 	//monitorStream := make(chan interface{}, 100) // Create channel for monitoring data
 	//monitoringPipeLine.AddStage(func(inObj interface{}) (outObj interface{}) {
@@ -86,8 +93,8 @@ func main() {
 	mDoneCh := monitoringPipeLine.RunPlug(doneT, monitorStream)
 
 	// Create main working channel
-	naiveFinderLine.AddStageWithFanOut(primerFinder.NaivePrimer(), 10)
-	naiveFinderLine.AddStage(primerFinder.endStubFn(monitorStream))
+	naiveFinderLine.AddStageWithFanOut(primerFinder.NaivePrimer(), primerFinder.ErrorHandler,10)
+	naiveFinderLine.AddStage(primerFinder.endStubFn(monitorStream), primerFinder.ErrorHandler)
 	intStream := pipeline.Take(doneN, pipeline.RepeatFn(doneN, randFn), 10)
 
 	start := time.Now()

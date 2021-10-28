@@ -1,5 +1,7 @@
 package pipeline
 
+import "sync"
+
 // Generator The generator function takes in a variadic slice of interface{},
 // constructs a buffered channel of integers with a length equal to the incoming
 // integer slice, starts a goroutine, and returns the constructed channel.
@@ -138,6 +140,34 @@ func Tee(doneCh, inStream ReadOnlyStream) (ReadOnlyStream, ReadOnlyStream) {
 		}
 	}()
 	return out1, out2
+}
+
+// MergeChannels merges an array of channels into a single channel. This utility
+// function can also be used independently outside of a pipeline.
+func MergeChannels(doneCh ReadOnlyStream, inChans []ReadOnlyStream) ReadOnlyStream {
+	var wg sync.WaitGroup
+	wg.Add(len(inChans))
+
+	outChan := make(chan interface{})
+	for _, inChan := range inChans {
+		go func(ch <-chan interface{}) {
+			defer wg.Done()
+			for obj := range OrDone(doneCh, ch) {
+				select {
+				case <-doneCh:
+					return
+				case outChan <- obj:
+				}
+
+			}
+		}(inChan)
+	}
+
+	go func() {
+		defer close(outChan)
+		wg.Wait()
+	}()
+	return outChan
 }
 
 //func TeeTo(doneCh, inStream ReadOnlyStream, outStreamLeft, outStreamRight BidirectionalStream)(ReadOnlyStream, ReadOnlyStream){
