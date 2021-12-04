@@ -72,17 +72,20 @@ func Take(doneCh ReadOnlyStream, inStream ReadOnlyStream, maxTimesTake int) Read
 		if maxTimesTake <= 0 {
 			return
 		}
-		i := 0
-		for v := range OrDone(doneCh, inStream) {
-			if i >= maxTimesTake {
-				return
-			}
+		for i := 0; i < maxTimesTake; i++ {
 			select {
 			case <-doneCh:
 				return
-			case valueStream <- v:
+			case h, ok := <-inStream:
+				if ok == false {
+					return
+				}
+				select {
+				case <-doneCh:
+					return
+				case valueStream <- h:
+				}
 			}
-			i++
 		}
 	}()
 	return valueStream

@@ -28,6 +28,12 @@ type StageFn func(doneCh, inStream ReadOnlyStream) ReadOnlyStream
 // package and passed in to instantiate a meaningful pipeline.
 type ProcessFn func(inObj interface{}) (outObj interface{}, err error)
 
+// FilterFn are the primary function types defined by users of this
+// package and passed in to instantiate a meaningful pipeline.
+// It used by Filter stage, in case of success the object will be passed
+// to the next stage
+type FilterFn func(inObj interface{}) (outObj interface{}, success bool)
+
 // ErrorProcessFn are the primary function types defined by users of this package
 // Simple example may be:
 //func errorHandler(err error)  {
@@ -55,6 +61,12 @@ func (p *Pipeline) AddStage(inFunc ProcessFn, errorProcessFn ErrorProcessFn) {
 	*p = append(*p, stageFnFactory(inFunc, errorProcessFn))
 }
 
+// AddFilterStage is a convenience method for adding a stage with fanSize = 1.
+// See AddFilterStageWithFanOut for more information.
+func (p *Pipeline) AddFilterStage(inFunc FilterFn) {
+	*p = append(*p, filterStageFnFactory(inFunc))
+}
+
 // AddStageWithFanOut adds a parallel fan-out ProcessFn to the pipeline. The
 // fanSize number indicates how many instances of this stage will read from the
 // previous stage and process the data flowing through simultaneously to take
@@ -70,6 +82,10 @@ func (p *Pipeline) AddStageWithFanOut(inFunc ProcessFn, errorProcessFn ErrorProc
 	*p = append(*p, fanningStageFnFactory(inFunc, errorProcessFn, fanSize))
 }
 
+func (p *Pipeline) AddFilterStageWithFanOut(inFunc FilterFn, fanSize uint64) {
+	*p = append(*p, fanningFilterStageFnFactory(inFunc, fanSize))
+}
+
 // fanningStageFnFactory makes a stage function that fans into multiple
 // goroutines increasing the stage throughput depending on the CPU.
 func fanningStageFnFactory(inFunc ProcessFn, errorProcessFn ErrorProcessFn, fanSize uint64) (outFunc StageFn) {
@@ -78,6 +94,20 @@ func fanningStageFnFactory(inFunc ProcessFn, errorProcessFn ErrorProcessFn, fanS
 		for i := uint64(0); i < fanSize; i++ {
 			//channels = append(channels, stageFnFactory(inFunc)(inChan))
 			channels = append(channels, stageFnFactory(inFunc, errorProcessFn)(done, inChan))
+		}
+		outChan = MergeChannels(done, channels)
+		return
+	}
+}
+
+// fanningFilterStageFnFactory makes a stage function that fans into multiple
+// goroutines increasing the stage throughput depending on the CPU.
+func fanningFilterStageFnFactory(inFunc FilterFn, fanSize uint64) (outFunc StageFn) {
+	return func(done ReadOnlyStream, inChan ReadOnlyStream) (outChan ReadOnlyStream) {
+		var channels []ReadOnlyStream
+		for i := uint64(0); i < fanSize; i++ {
+			//channels = append(channels, stageFnFactory(inFunc)(inChan))
+			channels = append(channels, filterStageFnFactory(inFunc)(done, inChan))
 		}
 		outChan = MergeChannels(done, channels)
 		return
@@ -96,6 +126,28 @@ func stageFnFactory(inFunc ProcessFn, errorProcessFn ErrorProcessFn) (outFunc St
 				outObj, err := inFunc(inObj)
 				if err != nil {
 					errorProcessFn(err)
+					continue
+				}
+				select {
+				case <-doneCh:
+					return
+				case outChan <- outObj:
+				}
+			}
+		}()
+		return outChan
+	}
+}
+
+// filterStageFnFactory makes a standard stage function from a given FilterFn.
+func filterStageFnFactory(inFunc FilterFn) (outFunc StageFn) {
+	return func(doneCh, inChan ReadOnlyStream) ReadOnlyStream {
+		outChan := make(chan interface{})
+		go func() {
+			defer close(outChan)
+			for inObj := range OrDone(doneCh, inChan) {
+				outObj, success := inFunc(inObj)
+				if !success {
 					continue
 				}
 				select {
