@@ -25,7 +25,7 @@ func (NaivePrimerFinder) isPrime(integer int) bool {
 	return isPrime
 }
 
-func (n NaivePrimerFinder) ErrorHandler(err error)  {
+func (n NaivePrimerFinder) ErrorHandler(err error) {
 	fmt.Printf("pipeline error: %s \n", err.Error())
 }
 
@@ -49,7 +49,7 @@ func (NaivePrimerFinder) endStubFn() pipeline.ProcessFn {
 func main() {
 	randNum := func() interface{} { return rand.Intn(50000000) }
 	primerFinder := NaivePrimerFinder{}
-	pLine := pipeline.New()
+	pLine := pipeline.NewPipeline()
 	done := make(chan interface{})
 	defer close(done)
 

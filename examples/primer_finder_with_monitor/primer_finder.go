@@ -25,7 +25,7 @@ func (NaivePrimerFinder) isPrime(integer int) bool {
 	return isPrime
 }
 
-func (n NaivePrimerFinder) ErrorHandler(err error)  {
+func (n NaivePrimerFinder) ErrorHandler(err error) {
 	fmt.Printf("pipeline error: %s \n", err.Error())
 }
 
@@ -40,7 +40,7 @@ func (n NaivePrimerFinder) NaivePrimer() pipeline.ProcessFn {
 }
 
 func (NaivePrimerFinder) endStubFn(monitoringStream pipeline.WriteOnlyStream) pipeline.ProcessFn {
-	return func(inObj interface{}) (interface{}, error)  {
+	return func(inObj interface{}) (interface{}, error) {
 		monitorMsg := fmt.Sprintf("endStubFn monitor : %v", time.Now().String())
 		fmt.Printf("NaivePrimerFinder is pimer: %v\n", inObj)
 		monitoringStream <- monitorMsg
@@ -53,12 +53,11 @@ func main() {
 	randFn := func() interface{} { return rand.Intn(50000000) }
 	// Create business-logic object
 	primerFinder := NaivePrimerFinder{}
-	naiveFinderLine := pipeline.New() // Create main pipeline
-	monitoringPipeLine := pipeline.New() // Create monitoring pipeline
+	naiveFinderLine := pipeline.NewPipeline()    // Create main pipeline
+	monitoringPipeLine := pipeline.NewPipeline() // Create monitoring pipeline
 
 	doneN := make(chan interface{}) // Create control channel for main pipeline
-	doneT := make(chan interface{})  // Create control channel for monitor pipeline
-
+	doneT := make(chan interface{}) // Create control channel for monitor pipeline
 
 	defer close(doneN)
 	defer close(doneT)
@@ -76,7 +75,7 @@ func main() {
 			return nil, fmt.Errorf("can't assert inObj to string: %v", inObj)
 		}
 		return inObj, nil
-	}, primerFinder.ErrorHandler,100)
+	}, primerFinder.ErrorHandler, 100)
 
 	//monitorStream := make(chan interface{}, 100) // Create channel for monitoring data
 	//monitoringPipeLine.AddStage(func(inObj interface{}) (outObj interface{}) {
@@ -93,7 +92,7 @@ func main() {
 	mDoneCh := monitoringPipeLine.RunPlug(doneT, monitorStream)
 
 	// Create main working channel
-	naiveFinderLine.AddStageWithFanOut(primerFinder.NaivePrimer(), primerFinder.ErrorHandler,10)
+	naiveFinderLine.AddStageWithFanOut(primerFinder.NaivePrimer(), primerFinder.ErrorHandler, 10)
 	naiveFinderLine.AddStage(primerFinder.endStubFn(monitorStream), primerFinder.ErrorHandler)
 	intStream := pipeline.Take(doneN, pipeline.RepeatFn(doneN, randFn), 10)
 
@@ -106,6 +105,6 @@ func main() {
 	// Don't forget close monitoring input
 	close(monitorStream)
 	// and wait monitoring...
-	<- mDoneCh
+	<-mDoneCh
 	fmt.Printf("Search took: %v\n", time.Since(start))
 }

@@ -50,8 +50,8 @@ type ErrorProcessFn func(error)
 // A running pipeline shouldn't be copied.
 type Pipeline []StageFn
 
-// New is a convenience method that creates a new Pipeline
-func New() Pipeline {
+// NewPipeline is a convenience method that creates a new Pipeline
+func NewPipeline() Pipeline {
 	return Pipeline{}
 }
 

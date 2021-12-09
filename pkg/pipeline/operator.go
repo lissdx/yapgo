@@ -77,7 +77,7 @@ func Take(doneCh ReadOnlyStream, inStream ReadOnlyStream, maxTimesTake int) Read
 			case <-doneCh:
 				return
 			case h, ok := <-inStream:
-				if ok == false {
+				if !ok {
 					return
 				}
 				select {
@@ -106,7 +106,7 @@ func OrDone(doneCh, inStream ReadOnlyStream) ReadOnlyStream {
 			case <-doneCh:
 				return
 			case v, ok := <-inStream:
-				if ok == false {
+				if !ok {
 					return
 				}
 				select {
