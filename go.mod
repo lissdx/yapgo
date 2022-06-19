@@ -1,3 +1,5 @@
-module github.com/lissdx/yapgo
+module yapgo
 
-go 1.17
+go 1.18
+
+require github.com/lissdx/yapgo v0.0.2 // indirect

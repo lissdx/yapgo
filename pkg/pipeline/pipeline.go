@@ -42,8 +42,8 @@ type FilterFn func(inObj interface{}) (outObj interface{}, success bool)
 type ErrorProcessFn func(error)
 
 // Pipeline type defines a pipeline to which processing "stages" can
-// be added and configured to fan-out. Pipelines are meant to be long
-// running as they continuously process data as it comes in.
+// be added and configured to fan-out. Pipelines are meant to be long-running
+// as they continuously process data as it comes in.
 //
 // A pipeline can be simultaneously run multiple times with different
 // input channels by invoking the Run() method multiple times.

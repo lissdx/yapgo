@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"github.com/lissdx/yapgo/pkg/pipeline"
 	"math/rand"
 	"time"
+	"yapgo/pkg/pipeline"
 )
 
 type Primer struct {

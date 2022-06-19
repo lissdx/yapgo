@@ -7,7 +7,7 @@ import "sync"
 // integer slice, starts a goroutine, and returns the constructed channel.
 // Then, on the goroutine that was created, generator ranges over the variadic slice that was passed
 // in and sends the slices’ values on the channel it created.
-// Note that the send on the channel shares a select statement with a selection on the done channel.
+// Note - send on the channel shares a select statement with a selection on the done channel.
 // Again, this is the pattern we established in “Preventing Goroutine Leaks” to guard against leaking goroutines.
 func Generator(doneCh ReadOnlyStream, values ...interface{}) ReadOnlyStream {
 	valueStream := make(chan interface{})
@@ -146,7 +146,7 @@ func Tee(doneCh, inStream ReadOnlyStream) (ReadOnlyStream, ReadOnlyStream) {
 }
 
 // MergeChannels merges an array of channels into a single channel. This utility
-// function can also be used independently outside of a pipeline.
+// function can also be used independently outside a pipeline.
 func MergeChannels(doneCh ReadOnlyStream, inChans []ReadOnlyStream) ReadOnlyStream {
 	var wg sync.WaitGroup
 	wg.Add(len(inChans))

@@ -2,11 +2,11 @@ package pipeline
 
 import (
 	"fmt"
-	buffer_logger "github.com/lissdx/yapgo/pkg/test/infra"
 	"sort"
 	"sync"
 	"testing"
 	"time"
+	bufferLogger "yapgo/pkg/test/infra"
 )
 
 func TestGenerator(t *testing.T) {
@@ -294,7 +294,7 @@ func TestTee(t *testing.T) {
 }
 
 type PipelineTest struct {
-	logger buffer_logger.Logger
+	logger bufferLogger.Logger
 }
 
 func (pt *PipelineTest) testStg() ProcessFn {
@@ -351,7 +351,7 @@ func TestPipeline(t *testing.T) {
 	done := make(chan interface{})
 	defer close(done)
 	pTest := PipelineTest{
-		logger: buffer_logger.NewBufferLogger(true),
+		logger: bufferLogger.NewBufferLogger(true),
 	}
 
 	testPipeline := NewPipeline()
@@ -365,8 +365,8 @@ func TestPipeline(t *testing.T) {
 
 	<-prDone
 
-	if pTest.logger.(*buffer_logger.BufferLogger).GetBufferedString() != want {
-		t.Errorf("%s got \n%s, want \n%s\n", t.Name(), pTest.logger.(*buffer_logger.BufferLogger).GetBufferedString(), want)
+	if pTest.logger.(*bufferLogger.BufferLogger).GetBufferedString() != want {
+		t.Errorf("%s got \n%s, want \n%s\n", t.Name(), pTest.logger.(*bufferLogger.BufferLogger).GetBufferedString(), want)
 	}
 }
 
